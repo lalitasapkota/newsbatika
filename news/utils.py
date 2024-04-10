@@ -20,6 +20,7 @@ from nltk.stem import WordNetLemmatizer
 
 # Get the list of English stop words
 stop_words = stopwords.words('english')
+custom_stop_words = ['post', 'today', 'news', 'portal', 'aarthiknews']
 
 
 
@@ -209,7 +210,7 @@ def update_news_vector():
         for word in news_data.description.split():
             cleaned_word = clean_text(word)
             lematized_word = lemmatize_word(cleaned_word)
-            if lematized_word and lematized_word not in stop_words:
+            if lematized_word and lematized_word not in stop_words and lematized_word not in custom_stop_words:
                 word_vocabulary.add(lematized_word)
     
     word_vocabulary = list(word_vocabulary)
