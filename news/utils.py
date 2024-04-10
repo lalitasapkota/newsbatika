@@ -50,12 +50,13 @@ def get_cosine_similarity(vec1, vec2):
 
 def get_vector(sentence, vocab):
     # Calculate how many time each word of sentence is repeated
-    text_counter = Counter(sentence.split())
+    sentence = clean_text(sentence)
+    sentence_token = [lemmatize_word(word) for word in sentence.split()]
+    text_counter = Counter(sentence_token)
 
     # Select count of only those word present in vocabulary. (i.e all word of all news)
     vector = [text_counter[word] for word in vocab]
 
-    # Lemmatize remain
     return vector
 
 
@@ -208,7 +209,7 @@ def update_news_vector():
         for word in news_data.description.split():
             cleaned_word = clean_text(word)
             lematized_word = lemmatize_word(cleaned_word)
-            if lematized_word not in stop_words:
+            if lematized_word and lematized_word not in stop_words:
                 word_vocabulary.add(lematized_word)
     
     word_vocabulary = list(word_vocabulary)
