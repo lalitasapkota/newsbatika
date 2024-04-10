@@ -44,6 +44,7 @@ class CustomUser(AbstractUser):
         related_query_name="user",
     )
 
+
 class vocabulary(models.Model):
     word_vocab = models.TextField(null=True)
     identifier = models.IntegerField(default=1)

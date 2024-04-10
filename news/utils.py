@@ -1,11 +1,13 @@
+import json
 import logging
 from datetime import datetime
-import json
+
 import requests
 import xmltodict
 from bs4 import BeautifulSoup as BSoup
 
-from .models import Headline, vocabulary
+from .models import Headline
+from .models import vocabulary
 
 
 logger = logging.getLogger(__name__)
@@ -19,20 +21,96 @@ from nltk.stem import WordNetLemmatizer
 
 
 # Get the list of English stop words
-stop_words = stopwords.words('english')
-custom_stop_words = ['post', 'today', 'news', 'portal', 'aarthiknews']
-
+stop_words = stopwords.words("english")
+custom_stop_words = [
+    "post",
+    "today",
+    "news",
+    "portal",
+    "aarthiknews",
+    "nepal",
+    "kathmandu",
+    "along",
+    "two",
+    "take",
+    "nepali",
+    "economic",
+    "march",
+    "one",
+]
 
 
 def clean_text(text):
-    # Remove special characters and convert to lowercase
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
-    return text.lower()
+    # Convert to lower case and remove non-alphanumeric character
+    text = text.lower()
+    text = re.sub(r"[^a-zA-Z0-9]", "", text)
+
+    # Common word with semantic meaning
+    semantic_dictionary = {
+        "game": [
+            "run",
+            "wicket",
+            "icc",
+            "cricket",
+            "bat",
+            "bowl",
+            "goal",
+            "series",
+            "match",
+            "cup",
+            "sport",
+            "odi",
+            "ireland",
+            "wolves",
+            "t20",
+            "toss",
+        ],
+        "finance": [
+            "gold",
+            "tola",
+            "silver",
+            "rs",
+            "billion",
+            "price",
+            "market",
+            "tourist",
+        ],
+        "politics": [
+            "election",
+            "government",
+            "minister",
+            "maoist",
+            "congress",
+            "rpp",
+            "nc",
+            "party",
+        ],
+        "environment": [
+            "pollution",
+            "fire",
+            "forest",
+            "polluted",
+            "evs",
+            "ev",
+            "park",
+            "earthquake",
+            "earthquakes",
+        ],
+    }
+
+    # Replace common word with semantic
+    for semantic, word_list in semantic_dictionary.items():
+        for word in word_list:
+            if text == word:
+                return semantic
+    return text
+
 
 def lemmatize_word(word):
     # Convert all verb to v1
     lemma = WordNetLemmatizer()
-    return lemma.lemmatize(word, 'v')
+    return lemma.lemmatize(word, "v")
+
 
 def get_cosine_similarity(vec1, vec2):
     # Calculate the dot product
@@ -51,8 +129,7 @@ def get_cosine_similarity(vec1, vec2):
 
 def get_vector(sentence, vocab):
     # Calculate how many time each word of sentence is repeated
-    sentence = clean_text(sentence)
-    sentence_token = [lemmatize_word(word) for word in sentence.split()]
+    sentence_token = [lemmatize_word(clean_text(word)) for word in sentence.split()]
     text_counter = Counter(sentence_token)
 
     # Select count of only those word present in vocabulary. (i.e all word of all news)
@@ -72,25 +149,23 @@ def get_similar_news(news_id):
     user_news = Headline.objects.get(id=news_id)
     user_news_vector = json.loads(user_news.vector)
 
-    
-    similarities = [get_cosine_similarity(user_news_vector, vector) for vector in all_news_vectors]
-    similarities_non_zero = list(filter(lambda x: x > 0, similarities))
+    similarities = [
+        get_cosine_similarity(user_news_vector, vector) for vector in all_news_vectors
+    ]
 
     # Sort indices based on similarity scores
     sorted_indices = sorted(
-        range(len(similarities_non_zero)), key=lambda x: similarities_non_zero[x], reverse=True
+        range(len(similarities)), key=lambda x: similarities[x], reverse=True
     )
 
     similar_news_list = [all_news_total_data[i] for i in sorted_indices]
-    similar_vector_values = [similarities_non_zero[i] for i in sorted_indices]
-    similar_news_title = [similar_news.title[:20] for similar_news in similar_news_list]
-    similar_news_dictionary = dict(zip(similar_news_title, similar_vector_values))
-    logger.info("\n")
+    similar_news_dictionary = {
+        all_news_total_data[i].title: similarities[i] for i in sorted_indices
+    }
+
     logger.info(f"Selected News: {user_news.title}")
     logger.info(f"Similarity Value: {similar_news_dictionary}")
     return similar_news_list
-
-
 
 
 def scrape_news():
@@ -200,20 +275,27 @@ def scrape_news():
     logger.info("Fetching news completed")
 
 
-
 def update_news_vector():
-    word_vocabulary = set()
+    vocab_count = dict()
 
     # Create News Vocabulary
-    logger.info('Creating news vocabulary')
+    logger.info("Creating news vocabulary")
     for news_data in Headline.objects.all():
         for word in news_data.description.split():
-            cleaned_word = clean_text(word)
-            lematized_word = lemmatize_word(cleaned_word)
-            if lematized_word and lematized_word not in stop_words and lematized_word not in custom_stop_words:
-                word_vocabulary.add(lematized_word)
-    
-    word_vocabulary = list(word_vocabulary)
+            lematized_word = lemmatize_word(word)
+            cleaned_word = clean_text(lematized_word)
+
+            if (
+                cleaned_word
+                and cleaned_word not in stop_words
+                and cleaned_word not in custom_stop_words
+            ):
+                vocab_count[cleaned_word] = vocab_count.get(cleaned_word, 0) + 1
+
+    word_vocabulary = [
+        vocab for vocab, occurence in vocab_count.items() if occurence > 1
+    ]
+
     if vocabulary.objects.filter(identifier=1).exists():
         logger.info("Vocab Exist. Updating")
         vocabulary.objects.filter(identifier=1).update(word_vocab=word_vocabulary)
@@ -221,10 +303,9 @@ def update_news_vector():
         vocabulary.objects.create(identifier=1, word_vocab=word_vocabulary)
         logger.info("Vocab Doesn't exist. Creating")
 
-    logger.info('Creating Vector for each news')
+    logger.info("Creating Vector for each news")
     for news_data in Headline.objects.all():
         news_vector = get_vector(news_data.description, word_vocabulary)
         vector_json = json.dumps(news_vector)
         news_data.vector = vector_json
         news_data.save()
- 
