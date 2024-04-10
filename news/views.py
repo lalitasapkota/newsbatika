@@ -15,6 +15,7 @@ logger = logging.getLogger("__main__")
 
 def scrape(request):
     utils.scrape_news()
+    utils.update_news_vector()
     return redirect("home")
 
 

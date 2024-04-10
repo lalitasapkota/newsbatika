@@ -11,6 +11,7 @@ class Headline(models.Model):
     url = models.TextField()
     pub_date = models.DateTimeField(blank=True, null=True)
     news_source = models.CharField(max_length=100, null=True)
+    vector = models.TextField(null=True)
 
     def __str__(self):
         return self.title
@@ -42,3 +43,7 @@ class CustomUser(AbstractUser):
         related_name="custom_user_set",
         related_query_name="user",
     )
+
+class vocabulary(models.Model):
+    word_vocab = models.TextField(null=True)
+    identifier = models.IntegerField(default=1)

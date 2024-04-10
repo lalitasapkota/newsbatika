@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime
-
+import json
 import requests
 import xmltodict
 from bs4 import BeautifulSoup as BSoup
 
-from .models import Headline
+from .models import Headline, vocabulary
 
 
 logger = logging.getLogger(__name__)
@@ -14,13 +14,24 @@ logger = logging.getLogger(__name__)
 import re
 import math
 from collections import Counter
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+
+# Get the list of English stop words
+stop_words = stopwords.words('english')
+
 
 
 def clean_text(text):
     # Remove special characters and convert to lowercase
-    text = re.sub(r"[^a-zA-Z0-9\s]", "", text)
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
     return text.lower()
 
+def lemmatize_word(word):
+    # Convert all verb to v1
+    lemma = WordNetLemmatizer()
+    return lemma.lemmatize(word, 'v')
 
 def get_cosine_similarity(vec1, vec2):
     # Calculate the dot product
@@ -37,82 +48,47 @@ def get_cosine_similarity(vec1, vec2):
         return dot_product / (magnitude1 * magnitude2)
 
 
-def get_vector(text, vocab):
-    # Create a vector representation of the text based on the vocabulary
-    text_counter = Counter(text.split())
+def get_vector(sentence, vocab):
+    # Calculate how many time each word of sentence is repeated
+    text_counter = Counter(sentence.split())
+
+    # Select count of only those word present in vocabulary. (i.e all word of all news)
     vector = [text_counter[word] for word in vocab]
+
+    # Lemmatize remain
     return vector
 
 
 def get_similar_news(news_id):
-    # Get all headlines excluding the user's news
-    headlines = Headline.objects.exclude(id=news_id)
+    # Get all headlines data excluding the user's news
+    all_news_total_data = Headline.objects.exclude(id=news_id)
 
-    # Get all news descriptions
-    descriptions = [clean_text(headline.description) for headline in headlines]
+    # Convert news paragraph to lower case and remove special characters for all news
+    all_news_vectors = [json.loads(news.vector) for news in all_news_total_data]
 
     # Get the user's news description
     user_news = Headline.objects.get(id=news_id)
-    user_description = clean_text(user_news.description)
+    user_news_vector = json.loads(user_news.vector)
 
-    # Add the user's news description to the list
-    descriptions.append(user_description)
-
-    # Create a vocabulary from all words in the descriptions
-    words = set(word for description in descriptions for word in description.split())
-
-    # Create vectors for each description
-    vectors = []
-    for description in descriptions:
-        vector = get_vector(description, words)
-        vectors.append(vector)
-
-    # Calculate cosine similarity
-    user_vector = vectors[-1]
-    similarities = [
-        get_cosine_similarity(user_vector, vector) for vector in vectors[:-1]
-    ]
+    
+    similarities = [get_cosine_similarity(user_news_vector, vector) for vector in all_news_vectors]
+    similarities_non_zero = list(filter(lambda x: x > 0, similarities))
 
     # Sort indices based on similarity scores
     sorted_indices = sorted(
-        range(len(similarities)), key=lambda x: similarities[x], reverse=True
+        range(len(similarities_non_zero)), key=lambda x: similarities_non_zero[x], reverse=True
     )
 
-    similar_news_list = [headlines[i] for i in sorted_indices]
+    similar_news_list = [all_news_total_data[i] for i in sorted_indices]
+    similar_vector_values = [similarities_non_zero[i] for i in sorted_indices]
+    similar_news_title = [similar_news.title[:20] for similar_news in similar_news_list]
+    similar_news_dictionary = dict(zip(similar_news_title, similar_vector_values))
+    logger.info("\n")
+    logger.info(f"Selected News: {user_news.title}")
+    logger.info(f"Similarity Value: {similar_news_dictionary}")
     return similar_news_list
 
 
-# Using libary
-
-# def get_similar_news(news_id):
-#     # Get all headlines excluding the user's news
-#     headlines = Headline.objects.exclude(id=news_id)
-
-#     # Get all news descriptions
-#     descriptions = [headline.description for headline in headlines]
-
-#     # Get the user's news description
-#     user_news = Headline.objects.get(id=news_id)
-#     user_description = user_news.description
-
-#     # Add the user's news description to the list
-#     descriptions.append(user_description)
-
-#     # Vectorize the data
-#     vectorizer = CountVectorizer().fit_transform(descriptions)
-
-#     # Calculate cosine similarity
-#     cosine_similarities = cosine_similarity(vectorizer[-1], vectorizer[:-1]).flatten()
-
-#     # Sort indices based on similarity scores
-#     sorted_indices = sorted(
-#         range(len(cosine_similarities)),
-#         key=lambda x: cosine_similarities[x],
-#         reverse=True,
-#     )
-
-#     similar_news_list = [headlines[i] for i in sorted_indices]
-#     return similar_news_list
 
 
 def scrape_news():
@@ -220,3 +196,33 @@ def scrape_news():
             logger.exception(f"Error fetching data from {feed_url}: {e}")
             continue
     logger.info("Fetching news completed")
+
+
+
+def update_news_vector():
+    word_vocabulary = set()
+
+    # Create News Vocabulary
+    logger.info('Creating news vocabulary')
+    for news_data in Headline.objects.all():
+        for word in news_data.description.split():
+            cleaned_word = clean_text(word)
+            lematized_word = lemmatize_word(cleaned_word)
+            if lematized_word not in stop_words:
+                word_vocabulary.add(lematized_word)
+    
+    word_vocabulary = list(word_vocabulary)
+    if vocabulary.objects.filter(identifier=1).exists():
+        logger.info("Vocab Exist. Updating")
+        vocabulary.objects.filter(identifier=1).update(word_vocab=word_vocabulary)
+    else:
+        vocabulary.objects.create(identifier=1, word_vocab=word_vocabulary)
+        logger.info("Vocab Doesn't exist. Creating")
+
+    logger.info('Creating Vector for each news')
+    for news_data in Headline.objects.all():
+        news_vector = get_vector(news_data.description, word_vocabulary)
+        vector_json = json.dumps(news_vector)
+        news_data.vector = vector_json
+        news_data.save()
+ 
