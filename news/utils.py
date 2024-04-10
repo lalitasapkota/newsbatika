@@ -47,55 +47,10 @@ def clean_text(text):
 
     # Common word with semantic meaning
     semantic_dictionary = {
-        "game": [
-            "run",
-            "wicket",
-            "icc",
-            "cricket",
-            "bat",
-            "bowl",
-            "goal",
-            "series",
-            "match",
-            "cup",
-            "sport",
-            "odi",
-            "ireland",
-            "wolves",
-            "t20",
-            "toss",
-        ],
-        "finance": [
-            "gold",
-            "tola",
-            "silver",
-            "rs",
-            "billion",
-            "price",
-            "market",
-            "tourist",
-        ],
-        "politics": [
-            "election",
-            "government",
-            "minister",
-            "maoist",
-            "congress",
-            "rpp",
-            "nc",
-            "party",
-        ],
-        "environment": [
-            "pollution",
-            "fire",
-            "forest",
-            "polluted",
-            "evs",
-            "ev",
-            "park",
-            "earthquake",
-            "earthquakes",
-        ],
+        "game": ["run", "wicket", "icc", "cricket", "bat", "bowl", "series", "match", "cup", "sport", "odi", "t20", "toss",],
+        "finance": ["gold", "tola", "silver", "rs", "billion", "price", "market", "tourist", ],
+        "politics": ["election", "government", "minister", "maoist", "congress", "rpp", "nc", "party",],
+        "environment": ["pollution", "fire", "forest", "polluted", "evs", "ev", "park", "earthquake", "earthquakes",],
     }
 
     # Replace common word with semantic
@@ -158,7 +113,11 @@ def get_similar_news(news_id):
         range(len(similarities)), key=lambda x: similarities[x], reverse=True
     )
 
+    # Include news with similarity more than 0.1 only
+    sorted_indices = list(filter(lambda x:similarities[x] > 0.1, sorted_indices))
+
     similar_news_list = [all_news_total_data[i] for i in sorted_indices]
+    logger.info(sorted_indices)
     similar_news_dictionary = {
         all_news_total_data[i].title: similarities[i] for i in sorted_indices
     }
